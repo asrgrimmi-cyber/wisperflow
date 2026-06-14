@@ -1,8 +1,11 @@
 """Listening indicator overlay and system tray management."""
 
 import logging
+import threading
 from enum import Enum
 from typing import Optional, Callable
+from PIL import Image, ImageDraw
+import pystray
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +76,84 @@ class TrayManager:
         self.on_resume = on_resume
         self.tray_icon_enabled = tray_icon_enabled
         self.is_running = True
+        self.icon = None
+        self.tray_thread = None
+        self.state = IndicatorState.IDLE
+
+    def _create_icon_image(self, state: IndicatorState) -> Image.Image:
+        """
+        Create a simple icon image based on state.
+
+        Args:
+            state: Current state
+
+        Returns:
+            PIL Image object
+        """
+        # Create a 64x64 image with a colored circle
+        size = 64
+        image = Image.new('RGB', (size, size), color='white')
+        draw = ImageDraw.Draw(image)
+
+        # Color based on state
+        color_map = {
+            IndicatorState.IDLE: '#808080',  # Gray
+            IndicatorState.LISTENING: '#00FF00',  # Green
+            IndicatorState.TRANSCRIBING: '#FFA500',  # Orange
+            IndicatorState.ERROR: '#FF0000',  # Red
+        }
+
+        color = color_map.get(state, '#808080')
+        margin = 8
+        draw.ellipse(
+            [margin, margin, size - margin, size - margin],
+            fill=color,
+            outline='black'
+        )
+
+        return image
+
+    def _build_menu(self) -> pystray.Menu:
+        """
+        Build the tray icon context menu.
+
+        Returns:
+            pystray.Menu object
+        """
+        return pystray.Menu(
+            pystray.MenuItem('Resume', self._on_resume, default=False),
+            pystray.MenuItem('Pause', self._on_pause, default=False),
+            pystray.MenuItem('Exit', self._on_exit, default=False),
+        )
+
+    def _on_pause(self, icon, item):
+        """Handle pause menu item."""
+        logger.info("Pause selected from tray")
+        self.on_pause()
+
+    def _on_resume(self, icon, item):
+        """Handle resume menu item."""
+        logger.info("Resume selected from tray")
+        self.on_resume()
+
+    def _on_exit(self, icon, item):
+        """Handle exit menu item."""
+        logger.info("Exit selected from tray")
+        self.icon.stop()
+        self.on_exit()
+
+    def _run_tray(self) -> None:
+        """Run the system tray icon (in a separate thread)."""
+        try:
+            image = self._create_icon_image(self.state)
+            self.icon = pystray.Icon(
+                'Whisper Dictation',
+                image,
+                menu=self._build_menu(),
+            )
+            self.icon.run()
+        except Exception as e:
+            logger.error(f"Error running tray icon: {e}")
 
     def start(self) -> None:
         """Start the tray manager."""
@@ -81,13 +162,15 @@ class TrayManager:
             return
 
         logger.info("Starting system tray manager")
-        # Placeholder for pystray implementation
-        # In full implementation, this would set up the tray icon with menu
+        self.tray_thread = threading.Thread(target=self._run_tray, daemon=True)
+        self.tray_thread.start()
 
     def stop(self) -> None:
         """Stop the tray manager."""
         logger.info("Stopping system tray manager")
         self.is_running = False
+        if self.icon:
+            self.icon.stop()
 
     def set_state(self, state: IndicatorState) -> None:
         """
@@ -96,5 +179,11 @@ class TrayManager:
         Args:
             state: New indicator state
         """
-        # Update tray icon color/animation based on state
+        self.state = state
+        if self.icon:
+            try:
+                image = self._create_icon_image(state)
+                self.icon.icon = image
+            except Exception as e:
+                logger.debug(f"Could not update tray icon: {e}")
         logger.debug(f"Tray state: {state.value}")
