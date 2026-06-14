@@ -14,8 +14,8 @@ audio:
 
 # Whisper STT Settings
 whisper:
-  model_path: "models/ggml-base.en.bin"  # Path to GGML model (downloaded on first run)
-  model_name: "base"  # "tiny", "base", "small", "medium", "large"
+  model_path: "models/ggml-tiny.en.bin"  # Path to GGML model (downloaded on first run)
+  model_name: "tiny"  # "tiny", "base", "small", "medium", "large" (tiny is fastest on CPU)
   language: "en"      # Language code
   device: "cpu"       # "cpu" or "cuda" (if available)
 
