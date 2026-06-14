@@ -9,7 +9,10 @@
       "Bash(python -c \":*)",
       "Bash(python test_e2e.py)",
       "Bash(python -m pip install -q openai-whisper)",
-      "Bash(python -c \"import whisper; print\\(''Whisper imported successfully''\\)\")"
+      "Bash(python -c \"import whisper; print\\(''Whisper imported successfully''\\)\")",
+      "Bash(./run.bat)",
+      "Bash(python -m pip install -q --upgrade -r requirements.txt)",
+      "Bash(timeout 15 python src/main.py)"
     ]
   }
 }
