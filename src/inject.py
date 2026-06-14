@@ -75,8 +75,11 @@ class TextInjector:
             # Small delay to ensure clipboard is ready
             time.sleep(0.1)
 
-            # Send Ctrl+V to paste using keyboard library (more reliable on Windows)
-            kb.hotkey('ctrl', 'v')
+            # Send Ctrl+V to paste using keyboard library
+            kb.press('ctrl')
+            kb.press('v')
+            kb.release('v')
+            kb.release('ctrl')
             logger.debug("Pasted from clipboard")
 
             # Restore previous clipboard content
