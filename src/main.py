@@ -55,7 +55,6 @@ class SpeechToTextApp:
         )
 
         self.transcriber = WhisperTranscriber(
-            model_path=self.config["whisper"]["model_path"],
             model_name=self.config["whisper"]["model_name"],
             language=self.config["whisper"]["language"],
             device=self.config["whisper"]["device"],
