@@ -77,9 +77,10 @@ class TextInjector:
             time.sleep(0.1)
 
             # Send Ctrl+V to paste
-            with self.keyboard_controller.pressed(keyboard.Key.ctrl):
-                self.keyboard_controller.press("v")
-                self.keyboard_controller.release("v")
+            self.keyboard_controller.press(keyboard.Key.ctrl)
+            self.keyboard_controller.press("v")
+            self.keyboard_controller.release("v")
+            self.keyboard_controller.release(keyboard.Key.ctrl)
 
             logger.debug("Pasted from clipboard")
 
@@ -126,7 +127,12 @@ class TextInjector:
                     self.keyboard_controller.press(keyboard.Key.tab)
                     self.keyboard_controller.release(keyboard.Key.tab)
                 else:
-                    self.keyboard_controller.type(char)
+                    try:
+                        self.keyboard_controller.type(char)
+                    except Exception:
+                        # Fallback: type the character as a string
+                        self.keyboard_controller.press(char)
+                        self.keyboard_controller.release(char)
                 time.sleep(0.01)  # Small delay between keystrokes
 
             logger.debug("Text injected via keystrokes")

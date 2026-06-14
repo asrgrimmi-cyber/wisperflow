@@ -31,8 +31,9 @@ class HotkeyListener:
         self.hotkey = hotkey
         self.mode = mode
         self.listener: Optional[keyboard.Listener] = None
-        self.is_pressed = False
+        self.is_combination_pressed = False
         self.is_active = False
+        self.pressed_keys = set()
 
         # Parse hotkey
         self.key_combination = self._parse_hotkey(hotkey)
@@ -66,24 +67,43 @@ class HotkeyListener:
 
     def on_key_press(self, key: keyboard.Key) -> None:
         """Handle key press event."""
-        if key in self.key_combination:
-            if self.mode == "hold":
-                self.on_press()
-            elif self.mode == "toggle" and not self.is_pressed:
-                if self.is_active:
-                    self.on_release()
-                    self.is_active = False
-                else:
-                    self.on_press()
-                    self.is_active = True
-            self.is_pressed = True
+        try:
+            if key in self.key_combination:
+                self.pressed_keys.add(key)
+
+                # Check if all keys in the combination are now pressed
+                if self.key_combination.issubset(self.pressed_keys):
+                    if not self.is_combination_pressed:
+                        self.is_combination_pressed = True
+                        logger.debug(f"Hotkey combination pressed: {self.hotkey}")
+
+                        if self.mode == "hold":
+                            self.on_press()
+                        elif self.mode == "toggle" and not self.is_active:
+                            self.on_press()
+                            self.is_active = True
+        except Exception as e:
+            logger.error(f"Error in on_key_press: {e}")
 
     def on_key_release(self, key: keyboard.Key) -> None:
         """Handle key release event."""
-        if key in self.key_combination:
-            if self.mode == "hold" and self.is_pressed:
-                self.on_release()
-            self.is_pressed = False
+        try:
+            if key in self.key_combination:
+                self.pressed_keys.discard(key)
+
+                # If any key in the combination was released
+                if not self.key_combination.issubset(self.pressed_keys):
+                    if self.is_combination_pressed:
+                        self.is_combination_pressed = False
+                        logger.debug(f"Hotkey combination released: {self.hotkey}")
+
+                        if self.mode == "hold":
+                            self.on_release()
+                        elif self.mode == "toggle" and self.is_active:
+                            self.on_release()
+                            self.is_active = False
+        except Exception as e:
+            logger.error(f"Error in on_key_release: {e}")
 
     def start(self) -> None:
         """Start listening for global hotkey."""

@@ -5,6 +5,7 @@ import yaml
 import sys
 import os
 import time
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -39,6 +40,9 @@ class SpeechToTextApp:
         self.config = self._load_config(config_path)
         self.is_running = False
         self.is_listening = False
+        self.recording_event = threading.Event()
+        self.audio_ready_event = threading.Event()
+        self.last_audio_data = None
 
         logger.info("Initializing Speech-to-Text Dictation Tool")
 
@@ -112,34 +116,54 @@ class SpeechToTextApp:
             logger.info("Hotkey pressed, starting capture")
             self.is_listening = True
             self.indicator.set_state(IndicatorState.LISTENING)
-            self._start_recording()
+            self.audio_ready_event.clear()
+            self.recording_event.set()
 
     def on_hotkey_release(self) -> None:
         """Called when hotkey is released."""
         if self.is_running and self.is_listening:
             logger.info("Hotkey released, stopping capture")
+            self.recording_event.clear()
             self.is_listening = False
-            self.indicator.set_state(IndicatorState.TRANSCRIBING)
-            self._process_audio()
+            # Process the audio in a background thread to avoid blocking hotkey handler
+            thread = threading.Thread(target=self._process_audio)
+            thread.daemon = True
+            thread.start()
 
-    def _start_recording(self) -> None:
-        """Start recording audio in a background thread."""
-        import threading
-
-        thread = threading.Thread(target=self.audio_capture.record)
-        thread.daemon = True
-        thread.start()
+    def _recording_loop(self) -> None:
+        """Background thread that handles audio recording."""
+        while self.is_running:
+            # Wait until recording is requested
+            if self.recording_event.is_set():
+                try:
+                    logger.debug("Recording thread: waiting for audio")
+                    audio_data = self.audio_capture.record()
+                    self.last_audio_data = audio_data
+                    self.audio_ready_event.set()
+                    logger.debug(f"Recording thread: got {len(audio_data)} samples")
+                except Exception as e:
+                    logger.error(f"Recording thread error: {e}")
+                    self.indicator.set_state(IndicatorState.ERROR)
+            else:
+                time.sleep(0.01)
 
     def _process_audio(self) -> None:
         """Process recorded audio and inject text."""
         try:
-            # Get recorded audio
-            audio_data = self.audio_capture.stop_recording()
+            # Wait for audio to be ready (with timeout)
+            if not self.audio_ready_event.wait(timeout=10):
+                logger.warning("Audio recording timed out")
+                self.indicator.set_state(IndicatorState.IDLE)
+                return
+
+            audio_data = self.last_audio_data
 
             if audio_data is None or len(audio_data) == 0:
                 logger.warning("No audio recorded")
                 self.indicator.set_state(IndicatorState.IDLE)
                 return
+
+            self.indicator.set_state(IndicatorState.TRANSCRIBING)
 
             # Transcribe
             raw_text = self.transcriber.transcribe(
@@ -172,6 +196,8 @@ class SpeechToTextApp:
         except Exception as e:
             logger.error(f"Error processing audio: {e}")
             self.indicator.set_state(IndicatorState.ERROR)
+        finally:
+            self.audio_ready_event.clear()
 
     def pause(self) -> None:
         """Pause the application."""
@@ -189,6 +215,12 @@ class SpeechToTextApp:
         self.is_running = True
 
         try:
+            # Start background recording thread
+            recording_thread = threading.Thread(target=self._recording_loop)
+            recording_thread.daemon = True
+            recording_thread.start()
+
+            # Start hotkey listener
             self.hotkey_listener.start()
             self.tray_manager.start()
             self.indicator.set_state(IndicatorState.IDLE)
