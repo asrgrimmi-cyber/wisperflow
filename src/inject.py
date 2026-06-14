@@ -3,7 +3,7 @@
 import logging
 import pyperclip
 import time
-from pynput import keyboard
+import keyboard as kb
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,6 @@ class TextInjector:
         """
         self.method = method
         self.restore_clipboard = restore_clipboard
-        self.keyboard_controller = keyboard.Controller()
 
     def inject(self, text: str) -> bool:
         """
@@ -76,12 +75,8 @@ class TextInjector:
             # Small delay to ensure clipboard is ready
             time.sleep(0.1)
 
-            # Send Ctrl+V to paste
-            self.keyboard_controller.press(keyboard.Key.ctrl)
-            self.keyboard_controller.press("v")
-            self.keyboard_controller.release("v")
-            self.keyboard_controller.release(keyboard.Key.ctrl)
-
+            # Send Ctrl+V to paste using keyboard library (more reliable on Windows)
+            kb.hotkey('ctrl', 'v')
             logger.debug("Pasted from clipboard")
 
             # Restore previous clipboard content
@@ -115,26 +110,8 @@ class TextInjector:
                 logger.debug("Text contains non-ASCII characters, using clipboard method")
                 return self._inject_clipboard(text)
 
-            # Type the text character by character
-            for char in text:
-                if char == " ":
-                    self.keyboard_controller.press(keyboard.Key.space)
-                    self.keyboard_controller.release(keyboard.Key.space)
-                elif char == "\n":
-                    self.keyboard_controller.press(keyboard.Key.enter)
-                    self.keyboard_controller.release(keyboard.Key.enter)
-                elif char == "\t":
-                    self.keyboard_controller.press(keyboard.Key.tab)
-                    self.keyboard_controller.release(keyboard.Key.tab)
-                else:
-                    try:
-                        self.keyboard_controller.type(char)
-                    except Exception:
-                        # Fallback: type the character as a string
-                        self.keyboard_controller.press(char)
-                        self.keyboard_controller.release(char)
-                time.sleep(0.01)  # Small delay between keystrokes
-
+            # Type the text using keyboard library
+            kb.write(text, interval=0.01)
             logger.debug("Text injected via keystrokes")
             return True
 
