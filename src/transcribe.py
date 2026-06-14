@@ -1,4 +1,4 @@
-"""Whisper.cpp transcription wrapper for local speech-to-text."""
+"""Whisper transcription wrapper for local speech-to-text."""
 
 import logging
 import os
@@ -9,11 +9,10 @@ logger = logging.getLogger(__name__)
 
 
 class WhisperTranscriber:
-    """Wraps whisper.cpp for local speech-to-text transcription."""
+    """Wraps OpenAI's Whisper for local speech-to-text transcription."""
 
     def __init__(
         self,
-        model_path: str = "models/ggml-base.en.bin",
         model_name: str = "base",
         language: str = "en",
         device: str = "cpu",
@@ -22,12 +21,10 @@ class WhisperTranscriber:
         Initialize Whisper transcriber.
 
         Args:
-            model_path: Path to GGML model file
             model_name: Model size (tiny, base, small, medium, large)
             language: Language code (e.g., "en")
             device: Device to use ("cpu" or "cuda")
         """
-        self.model_path = model_path
         self.model_name = model_name
         self.language = language
         self.device = device
@@ -36,47 +33,27 @@ class WhisperTranscriber:
         self._init_model()
 
     def _init_model(self) -> None:
-        """Initialize the whisper.cpp model."""
+        """Initialize the Whisper model."""
         try:
-            from pywhispercpp.factory import model_factory
+            import whisper
 
             logger.info(f"Loading Whisper model: {self.model_name}")
 
-            # Download model if not present
-            if not os.path.exists(self.model_path):
-                logger.info(f"Model not found at {self.model_path}, downloading...")
-                os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
-                self._download_model()
-
-            # Load the model
-            self.model = model_factory(
-                model_name=self.model_name,
-                models_dir="models",
+            # Load the model (will auto-download if not present)
+            self.model = whisper.load_model(
+                self.model_name,
+                device=self.device,
+                download_root="models",
             )
             logger.info("Whisper model loaded successfully")
 
         except ImportError:
             logger.error(
-                "pywhispercpp not installed. Install with: pip install pywhispercpp"
+                "openai-whisper not installed. Install with: pip install openai-whisper"
             )
             raise
         except Exception as e:
             logger.error(f"Error loading Whisper model: {e}")
-            raise
-
-    def _download_model(self) -> None:
-        """Download the Whisper model from OpenAI."""
-        try:
-            from pywhispercpp.factory import model_factory
-
-            # This will download the model automatically
-            model_factory(
-                model_name=self.model_name,
-                models_dir="models",
-            )
-            logger.info(f"Model {self.model_name} downloaded successfully")
-        except Exception as e:
-            logger.error(f"Error downloading model: {e}")
             raise
 
     def transcribe(self, audio_data: np.ndarray, sample_rate: int = 16000) -> str:
@@ -101,15 +78,17 @@ class WhisperTranscriber:
 
             # Normalize to -1.0 to 1.0 range if needed
             max_val = np.max(np.abs(audio_data))
-            if max_val > 1.0:
-                audio_data = audio_data / (max_val + 1e-6)
+            if max_val > 0 and max_val > 1.0:
+                audio_data = audio_data / max_val
 
-            logger.debug(f"Transcribing audio ({len(audio_data)} samples)")
+            # Whisper expects audio in the range [-1, 1] and resamples to 16000 Hz internally
+            logger.debug(f"Transcribing audio ({len(audio_data)} samples at {sample_rate} Hz)")
 
-            # Transcribe
+            # Transcribe using the model
             result = self.model.transcribe(
                 audio_data,
                 language=self.language,
+                verbose=False,
             )
 
             text = result.get("text", "").strip()
@@ -119,6 +98,8 @@ class WhisperTranscriber:
 
         except Exception as e:
             logger.error(f"Error during transcription: {e}")
+            import traceback
+            traceback.print_exc()
             return ""
 
     def transcribe_file(self, filepath: str) -> str:
@@ -132,16 +113,25 @@ class WhisperTranscriber:
             Transcribed text
         """
         try:
-            import soundfile as sf
+            if self.model is None:
+                logger.error("Model not initialized")
+                return ""
 
-            audio_data, sample_rate = sf.read(filepath)
+            logger.debug(f"Transcribing file: {filepath}")
 
-            # Handle stereo -> mono conversion
-            if len(audio_data.shape) > 1:
-                audio_data = np.mean(audio_data, axis=1)
+            result = self.model.transcribe(
+                filepath,
+                language=self.language,
+                verbose=False,
+            )
 
-            return self.transcribe(audio_data, sample_rate)
+            text = result.get("text", "").strip()
+            logger.info(f"File transcription: {text}")
+
+            return text
 
         except Exception as e:
             logger.error(f"Error transcribing file {filepath}: {e}")
+            import traceback
+            traceback.print_exc()
             return ""

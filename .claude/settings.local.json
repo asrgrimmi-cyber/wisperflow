@@ -4,7 +4,12 @@
       "Bash(git init:*)",
       "Bash(git config:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(python -m pip install -q -r requirements.txt)",
+      "Bash(python -c \":*)",
+      "Bash(python test_e2e.py)",
+      "Bash(python -m pip install -q openai-whisper)",
+      "Bash(python -c \"import whisper; print\\(''Whisper imported successfully''\\)\")"
     ]
   }
 }
