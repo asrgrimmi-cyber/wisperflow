@@ -51,13 +51,16 @@ class AudioCapture:
         Stop recording audio and return the captured frames.
 
         Returns:
-            NumPy array of audio samples
+            NumPy array of audio samples (1D for mono)
         """
         logger.debug("Stopping audio recording")
         with self.lock:
             self.is_recording = False
             if self.frames:
                 audio_data = np.concatenate(self.frames)
+                # Flatten to 1D if needed (for mono audio from sounddevice)
+                if audio_data.ndim > 1:
+                    audio_data = audio_data.flatten()
                 return audio_data
             return np.array([])
 
