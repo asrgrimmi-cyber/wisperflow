@@ -54,6 +54,7 @@ class TextToSpeech:
 
     def _on_hotkey(self) -> None:
         if self._speaking:
+            logger.info("TTS: Stop requested by user")
             self._stop_flag = True
             return
         threading.Thread(target=self._speak_selected, daemon=True).start()
