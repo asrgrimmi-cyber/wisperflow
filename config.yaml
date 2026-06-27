@@ -10,7 +10,7 @@ whisper:
   model_name: tiny
   language: en
   device: cpu
-  # For GPU: device: cuda (requires torch + CUDA)
+  # To use GPU: 1) Install CUDA-enabled PyTorch 2) Change device to: cuda
   # Available models: tiny, base, small, medium, large
 ollama:
   enabled: true
