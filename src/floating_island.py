@@ -148,7 +148,7 @@ class IslandWidget(QWidget):
             self._target_width = new_target
             self._transition_frame = 0
 
-        is_animated = state in (IslandState.LISTENING, IslandState.TRANSCRIBING)
+        is_animated = state in (IslandState.LISTENING, IslandState.TRANSCRIBING, IslandState.READING)
         transitioning = self._current_width != self._target_width
         if is_animated or transitioning:
             if not self._timer.isActive():
@@ -178,7 +178,7 @@ class IslandWidget(QWidget):
             if t >= 1.0:
                 self._current_width = self._target_width
 
-        is_animated = self.state in (IslandState.LISTENING, IslandState.TRANSCRIBING)
+        is_animated = self.state in (IslandState.LISTENING, IslandState.TRANSCRIBING, IslandState.READING)
         transitioning = self._current_width != self._target_width
         if not is_animated and not transitioning:
             self._timer.stop()
