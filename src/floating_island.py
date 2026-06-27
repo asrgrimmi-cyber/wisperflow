@@ -33,6 +33,7 @@ class IslandState(Enum):
     IDLE = "idle"
     LISTENING = "listening"
     TRANSCRIBING = "transcribing"
+    READING = "reading"
     ERROR = "error"
 
 
@@ -66,6 +67,13 @@ STYLES = {
         "border":   _ACCENT_AM,
         "icon":     _ACCENT_AM,
         "content":  "spin",
+    },
+    IslandState.READING: {
+        "pill_bg":  QColor(20, 35, 25, 245),
+        "border":   QColor(34, 197, 94),  # Green
+        "icon":     QColor(34, 197, 94),  # Green
+        "content":  "wave",
+        "bar_color": QColor(34, 197, 94),  # Green bars
     },
     IslandState.ERROR: {
         "pill_bg":  QColor(40, 20, 20, 245),
@@ -277,19 +285,23 @@ class IslandWidget(QWidget):
         total = count * bar_w + (count - 1) * gap
         start_x = left + (right - left - total) / 2
 
-        color = QColor(_ACCENT_BL)
+        # Use state-specific bar color if available
+        style = STYLES[self.state]
+        bar_color = style.get("bar_color", _ACCENT_BL)
+        color = QColor(bar_color)
         color.setAlphaF(alpha)
         p.setPen(Qt.NoPen)
 
         # Check if we have real audio levels (any non-zero)
-        has_real_levels = any(lvl > 0.01 for lvl in self._audio_levels)
+        # For READING state, always use animation
+        has_real_levels = self.state != IslandState.READING and any(lvl > 0.01 for lvl in self._audio_levels)
 
         for i in range(count):
             if has_real_levels:
                 # Use real audio levels (0.0-1.0 scale, max height 17)
                 h = 5 + self._audio_levels[i] * (17 - 5)
             else:
-                # Fallback to animation when no audio input
+                # Use animation for READING state or when no audio input
                 delay = i * 0.15
                 t = (self._anim_tick * 0.033 + delay) * 2 * math.pi
                 h = 5 + (17 - 5) * (0.5 + 0.5 * math.sin(t))

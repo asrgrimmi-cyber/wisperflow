@@ -113,6 +113,8 @@ class WisperApp:
             hotkey=tts_cfg.get("hotkey", "ctrl+win+s"),
             rate=tts_cfg.get("rate", 175),
             volume=tts_cfg.get("volume", 1.0),
+            on_speak_start=self._on_tts_start,
+            on_speak_end=self._on_tts_end,
         )
 
         # Hotkey
@@ -262,6 +264,18 @@ class WisperApp:
             self._audio_ready.clear()
             self._processing = False
             self._process_lock.release()
+
+    # ── TTS state updates ─────────────────────────────────
+
+    def _on_tts_start(self) -> None:
+        """Called when TTS starts playing."""
+        logger.info("[TTS] Starting playback")
+        self.island.set_state(IslandState.READING)
+
+    def _on_tts_end(self) -> None:
+        """Called when TTS finishes playing."""
+        logger.info("[TTS] Finished playback")
+        self.island.set_state(IslandState.IDLE)
 
     # ── Lifecycle ─────────────────────────────────────────
 

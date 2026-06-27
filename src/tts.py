@@ -26,6 +26,8 @@ class TextToSpeech:
         voice: str = "en-US-GuyNeural",
         rate: str = "+0%",
         volume: str = "+0%",
+        on_speak_start=None,
+        on_speak_end=None,
     ):
         self.hotkey = hotkey
         self.voice = voice
@@ -34,6 +36,8 @@ class TextToSpeech:
         self._speaking = False
         self._stop_flag = False
         self._lock = threading.Lock()
+        self.on_speak_start = on_speak_start
+        self.on_speak_end = on_speak_end
 
     def start(self) -> None:
         """Register the TTS hotkey."""
@@ -127,6 +131,14 @@ class TextToSpeech:
                 return
 
             logger.info(f"TTS: playing {len(data)/samplerate:.1f}s audio")
+
+            # Notify that speech is starting
+            if self.on_speak_start:
+                try:
+                    self.on_speak_start()
+                except Exception as e:
+                    logger.error(f"on_speak_start callback error: {e}")
+
             sd.play(data, samplerate)
 
             # Wait for playback, checking stop flag
@@ -134,10 +146,22 @@ class TextToSpeech:
                 if self._stop_flag:
                     sd.stop()
                     logger.info("TTS: stopped by user")
+                    if self.on_speak_end:
+                        try:
+                            self.on_speak_end()
+                        except Exception as e:
+                            logger.error(f"on_speak_end callback error: {e}")
                     return
                 time.sleep(0.1)
 
             sd.wait()
+
+            # Notify that speech has ended
+            if self.on_speak_end:
+                try:
+                    self.on_speak_end()
+                except Exception as e:
+                    logger.error(f"on_speak_end callback error: {e}")
 
         except ImportError:
             logger.warning("edge-tts not available, falling back to pyttsx3")
@@ -157,11 +181,29 @@ class TextToSpeech:
         """Fallback: speak using Windows SAPI via pyttsx3."""
         try:
             import pyttsx3
+
+            if self.on_speak_start:
+                try:
+                    self.on_speak_start()
+                except Exception as e:
+                    logger.error(f"on_speak_start callback error: {e}")
+
             engine = pyttsx3.init()
             engine.setProperty("rate", 175)
             engine.setProperty("volume", 1.0)
             engine.say(text)
             engine.runAndWait()
             engine.stop()
+
+            if self.on_speak_end:
+                try:
+                    self.on_speak_end()
+                except Exception as e:
+                    logger.error(f"on_speak_end callback error: {e}")
         except Exception as e:
             logger.error(f"pyttsx3 fallback error: {e}")
+            if self.on_speak_end:
+                try:
+                    self.on_speak_end()
+                except Exception as e:
+                    logger.error(f"on_speak_end callback error: {e}")
