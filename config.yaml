@@ -13,7 +13,7 @@ whisper:
   remote_url: http://192.168.0.5:8765
   remote_timeout: 30
 ollama:
-  enabled: true
+  enabled: false
   base_url: http://localhost:11434
   model: tinyllama
   timeout: 10

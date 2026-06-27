@@ -31,12 +31,9 @@ class OllamaCleanup:
         self.timeout = timeout
         self.prompt_template = (
             prompt_template
-            or """Fix the following raw speech-to-text transcript.
-Only fix: punctuation, capitalization, remove common filler words (um, uh, like).
-Do NOT add new content or rephrase.
-Output the fixed text only, no explanations.
+            or """Fix grammar and punctuation only. Keep all content. Output fixed text:
 
-Text: {text}"""
+{text}"""
         )
 
     def is_available(self) -> bool:

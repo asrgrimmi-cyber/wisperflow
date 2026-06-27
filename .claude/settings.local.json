@@ -52,7 +52,10 @@
       "Bash(taskkill /f /im python.exe)",
       "Bash(venv/Scripts/python src/main.py)",
       "Bash(gh auth:*)",
-      "Bash(winget install:*)"
+      "Bash(winget install:*)",
+      "Bash(ollama:*)",
+      "Bash(/c/Users/Aakashsingh/AppData/Local/Programs/Ollama/ollama.exe pull:*)",
+      "Bash(/c/Users/Aakashsingh/AppData/Local/Programs/Ollama/ollama.exe list:*)"
     ]
   }
 }
