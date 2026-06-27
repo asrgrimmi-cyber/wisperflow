@@ -1,41 +1,55 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller build spec for Whisper Speech-to-Text Dictation Tool."""
+"""PyInstaller build spec for Wisper.
 
-import sys
-from PyInstaller.utils.hooks import collect_submodules, get_module_file_attribute
+Builds a lightweight client exe. Transcription happens on the GPU
+server — torch/whisper are NOT bundled (they'd add ~2GB and crash
+on systems without the right CUDA DLLs).
 
-block_cipher = None
+The exe includes: PyQt5 UI, audio capture, hotkey, text injection,
+HTTP client for GPU server, and the first-run wizard.
+"""
+
+import os
 
 a = Analysis(
     ['src/main.py'],
-    pathex=[],
+    pathex=['.'],
     binaries=[],
     datas=[
         ('config.yaml', '.'),
-        ('models', 'models'),
     ],
     hiddenimports=[
-        'pystray',
-        'PIL',
-        'whisper',
+        'PyQt5',
+        'PyQt5.QtCore',
+        'PyQt5.QtGui',
+        'PyQt5.QtWidgets',
         'sounddevice',
         'soundfile',
+        '_sounddevice_data',
         'numpy',
         'pyperclip',
         'keyboard',
         'yaml',
+        'requests',
+    ],
+    excludes=[
+        'torch',
+        'whisper',
+        'torchaudio',
+        'torchvision',
+        'tiktoken',
+        'tiktoken_ext',
+        'tensorboard',
+        'matplotlib',
+        'scipy',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludedimports=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
     noarchive=False,
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure, a.zipped_data)
 
 exe = EXE(
     pyz,
@@ -44,17 +58,11 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='Whisper-Dictation',
+    name='Wisper',
     debug=False,
-    bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,  # No console window - runs in background/system tray
-    disable_windowed_traceback=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon='icon.ico',  # Optional: add icon later
+    console=False,
+    icon='assets/icon.ico' if os.path.exists('assets/icon.ico') else None,
 )

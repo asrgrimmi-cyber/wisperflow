@@ -1,1 +1,1 @@
-"""Speech-to-Text Dictation Tool"""
+"""Wisper — local speech-to-text dictation tool."""

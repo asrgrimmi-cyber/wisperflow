@@ -1,49 +1,28 @@
-# Speech-to-Text Dictation Tool Configuration
-
-# Hotkey Settings
 hotkey:
-  key: "ctrl+win"  # Global hotkey to toggle listening
-  mode: "hold"     # "hold" = press & hold to talk; "toggle" = press once to start, again to stop
-
-# Audio Capture Settings
+  key: ctrl+win
+  mode: hold
 audio:
-  sample_rate: 16000  # Hz
-  channels: 1         # Mono
-  silence_threshold: 0.02  # RMS threshold for silence detection (0.0-1.0)
-  silence_duration: 1.5    # Seconds of silence to auto-stop recording
-
-# Whisper STT Settings
+  sample_rate: 16000
+  channels: 1
+  silence_threshold: 0.02
+  silence_duration: 1.5
 whisper:
-  model_path: "models/ggml-tiny.en.bin"  # Path to GGML model (downloaded on first run)
-  model_name: "tiny"  # "tiny", "base", "small", "medium", "large" (tiny is fastest on CPU)
-  language: "en"      # Language code
-  device: "cpu"       # "cpu" or "cuda" (if available)
-
-# Ollama LLM Cleanup Settings
+  model_name: tiny
+  language: en
+  device: cpu
+  remote_url: http://192.168.0.5:8765
+  remote_timeout: 30
 ollama:
-  enabled: true
-  base_url: "http://localhost:11434"
-  model: "llama2"  # Model name to use for cleanup
-  timeout: 10      # Seconds to wait for response
-  prompt_template: |
-    Fix the following raw speech-to-text transcript.
-    Only fix: punctuation, capitalization, remove common filler words (um, uh, like).
-    Do NOT add new content or rephrase.
-    Output the fixed text only, no explanations.
-
-    Text: {text}
-
-# Text Injection Settings
+  enabled: false
+  base_url: http://localhost:11434
+  model: llama2
+  timeout: 10
 injection:
-  method: "clipboard"  # "clipboard" (preferred) or "keystroke"
-  restore_clipboard: true  # Restore previous clipboard after pasting
-
-# UI & Logging
-ui:
-  show_indicator: true      # Show listening indicator overlay
-  tray_icon_enabled: true   # Show system tray icon
-  log_level: "info"         # "debug", "info", "warning", "error"
-
-# Startup Settings
-startup:
-  auto_start: false  # Run on Windows startup
+  method: clipboard
+  restore_clipboard: true
+tts:
+  hotkey: ctrl+win+r
+  voice: en-US-GuyNeural
+  rate: "+0%"
+  volume: "+0%"
+_setup_complete: true

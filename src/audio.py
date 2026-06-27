@@ -38,6 +38,7 @@ class AudioCapture:
         self.is_recording = False
         self.frames = []
         self.lock = threading.Lock()
+        self.current_rms = 0.0  # Real-time RMS level for UI visualization
 
     def start_recording(self) -> None:
         """Start recording audio."""
@@ -95,6 +96,9 @@ class AudioCapture:
 
                     # Compute RMS to detect silence
                     rms = np.sqrt(np.mean(chunk**2))
+
+                    # Update real-time RMS for UI visualization
+                    self.current_rms = float(rms)
 
                     if rms < self.silence_threshold:
                         silence_frames += 1

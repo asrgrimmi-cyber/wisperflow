@@ -4,9 +4,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
@@ -44,6 +42,12 @@ models/*.gguf
 
 # PyInstaller
 *.manifest
-*.spec
 dist/
 build/
+
+# Artifacts (not part of the project)
+whisper-transcription.tar.gz
+wisper-button.html
+
+# Claude
+.claude/

@@ -1,263 +1,321 @@
-"""Main entry point for the speech-to-text dictation tool."""
+"""Wisper — local speech-to-text dictation tool for Windows.
 
+Press Ctrl+Win (or click the floating island) to dictate.
+Audio is sent to a GPU server for fast Whisper transcription,
+with local CPU fallback. Transcribed text is pasted into the
+focused window.
+"""
+
+import ctypes
 import logging
-import yaml
-import sys
 import os
-import time
+import sys
 import threading
+import time
 from pathlib import Path
-from typing import Optional
 
-# Add src directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import yaml
 
-from src.hotkey import HotkeyListener
+
+def _app_dir() -> Path:
+    """Return the directory containing the exe (frozen) or the project root (dev)."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
+    return Path(__file__).parent.parent
+
+
+sys.path.insert(0, str(_app_dir()))
+
 from src.audio import AudioCapture
-from src.transcribe import WhisperTranscriber
 from src.cleanup import OllamaCleanup
+from src.floating_island import FloatingIsland, IslandState
+from src.hotkey import HotkeyListener
 from src.inject import TextInjector
-from src.overlay import ListeningIndicator, TrayManager, IndicatorState
+from src.transcribe import WhisperTranscriber
+from src.tts import TextToSpeech
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s  %(name)s  %(levelname)s  %(message)s",
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("wisper")
 
 
-class SpeechToTextApp:
-    """Main application class orchestrating the speech-to-text pipeline."""
+def _hide_console() -> None:
+    """Hide the console window on Windows."""
+    try:
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 0)
+    except Exception:
+        pass
+
+
+class WisperApp:
+    """Orchestrates the capture → transcribe → inject pipeline."""
 
     def __init__(self, config_path: str = "config.yaml"):
-        """
-        Initialize the speech-to-text application.
-
-        Args:
-            config_path: Path to configuration file
-        """
+        t0 = time.perf_counter()
         self.config = self._load_config(config_path)
         self.is_running = False
         self.is_listening = False
-        self.recording_event = threading.Event()
-        self.audio_ready_event = threading.Event()
-        self.last_audio_data = None
+        self._processing = False
+        self._process_lock = threading.Lock()
+        self._recording_event = threading.Event()
+        self._audio_ready = threading.Event()
+        self._last_audio = None
 
-        logger.info("Initializing Speech-to-Text Dictation Tool")
+        logger.info("Initializing Wisper")
 
-        # Initialize components
-        self.audio_capture = AudioCapture(
-            sample_rate=self.config["audio"]["sample_rate"],
-            channels=self.config["audio"]["channels"],
-            silence_threshold=self.config["audio"]["silence_threshold"],
-            silence_duration=self.config["audio"]["silence_duration"],
+        # UI
+        self.island = FloatingIsland(
+            on_click=self._on_island_click,
+            on_right_click=self._pause,
+            on_exit=self._stop,
+        )
+        # Audio
+        audio_cfg = self.config["audio"]
+        self.audio = AudioCapture(
+            sample_rate=audio_cfg["sample_rate"],
+            channels=audio_cfg["channels"],
+            silence_threshold=audio_cfg["silence_threshold"],
+            silence_duration=audio_cfg["silence_duration"],
         )
 
+        # Transcription
+        whisper_cfg = self.config["whisper"]
         self.transcriber = WhisperTranscriber(
-            model_name=self.config["whisper"]["model_name"],
-            language=self.config["whisper"]["language"],
-            device=self.config["whisper"]["device"],
+            model_name=whisper_cfg["model_name"],
+            language=whisper_cfg["language"],
+            device=whisper_cfg["device"],
+            remote_url=whisper_cfg.get("remote_url") or None,
+            remote_timeout=whisper_cfg.get("remote_timeout", 30),
         )
 
+        # LLM cleanup (optional)
+        ollama_cfg = self.config["ollama"]
         self.cleanup = OllamaCleanup(
-            base_url=self.config["ollama"]["base_url"],
-            model=self.config["ollama"]["model"],
-            timeout=self.config["ollama"]["timeout"],
+            base_url=ollama_cfg["base_url"],
+            model=ollama_cfg["model"],
+            timeout=ollama_cfg["timeout"],
         )
 
-        self.text_injector = TextInjector(
-            method=self.config["injection"]["method"],
-            restore_clipboard=self.config["injection"]["restore_clipboard"],
+        # Text injection
+        inject_cfg = self.config["injection"]
+        self.injector = TextInjector(
+            method=inject_cfg["method"],
+            restore_clipboard=inject_cfg["restore_clipboard"],
         )
 
-        self.indicator = ListeningIndicator(
-            show_indicator=self.config["ui"]["show_indicator"]
+        # Text-to-Speech
+        tts_cfg = self.config.get("tts", {})
+        self.tts = TextToSpeech(
+            hotkey=tts_cfg.get("hotkey", "ctrl+win+s"),
+            rate=tts_cfg.get("rate", 175),
+            volume=tts_cfg.get("volume", 1.0),
         )
 
-        self.tray_manager = TrayManager(
-            on_exit=self.stop,
-            on_pause=self.pause,
-            on_resume=self.resume,
-            tray_icon_enabled=self.config["ui"]["tray_icon_enabled"],
+        # Hotkey
+        hotkey_cfg = self.config["hotkey"]
+        self.hotkey = HotkeyListener(
+            on_press=self._on_hotkey_press,
+            on_release=self._on_hotkey_release,
+            hotkey=hotkey_cfg["key"],
+            mode=hotkey_cfg["mode"],
         )
 
-        self.hotkey_listener = HotkeyListener(
-            on_press=self.on_hotkey_press,
-            on_release=self.on_hotkey_release,
-            hotkey=self.config["hotkey"]["key"],
-            mode=self.config["hotkey"]["mode"],
-        )
+        logger.info(f"Init complete in {time.perf_counter() - t0:.2f}s")
 
-    def _load_config(self, config_path: str) -> dict:
-        """
-        Load configuration from YAML file.
+    # ── Config ────────────────────────────────────────────
 
-        Args:
-            config_path: Path to configuration file
+    @staticmethod
+    def _load_config(path: str) -> dict:
+        # If config doesn't exist next to exe, copy the bundled default
+        if not os.path.exists(path) and getattr(sys, "frozen", False):
+            bundled = os.path.join(sys._MEIPASS, "config.yaml")
+            if os.path.exists(bundled):
+                import shutil
+                shutil.copy2(bundled, path)
+                logger.info(f"Copied default config to {path}")
 
-        Returns:
-            Configuration dictionary
-        """
-        if not os.path.exists(config_path):
-            logger.error(f"Configuration file not found: {config_path}")
+        if not os.path.exists(path):
+            logger.error(f"Config not found: {path}")
             sys.exit(1)
+        with open(path) as f:
+            return yaml.safe_load(f)
 
-        with open(config_path, "r") as f:
-            config = yaml.safe_load(f)
+    # ── Listening control (single entry/exit points) ─────
 
-        logger.info(f"Configuration loaded from {config_path}")
-        return config
+    def _start_listening(self, source: str) -> None:
+        if not self.is_running or self.is_listening or self._processing:
+            return
+        logger.info(f"[{source}] Capture started")
+        self.is_listening = True
+        self.island.set_state(IslandState.LISTENING)
+        self._audio_ready.clear()
+        self._recording_event.set()
 
-    def on_hotkey_press(self) -> None:
-        """Called when hotkey is pressed."""
-        if self.is_running and not self.is_listening:
-            logger.info("Hotkey pressed, starting capture")
-            self.is_listening = True
-            self.indicator.set_state(IndicatorState.LISTENING)
-            self.audio_ready_event.clear()
-            self.recording_event.set()
+    def _stop_and_process(self, source: str) -> None:
+        if not self.is_running or not self.is_listening:
+            return
+        logger.info(f"[{source}] Capture stopped → processing")
+        self._recording_event.clear()
+        self.audio.is_recording = False
+        self.is_listening = False
+        self.island.set_audio_levels([0.0] * 5)  # Reset levels when stopping recording
+        self.island.set_state(IslandState.TRANSCRIBING)
+        threading.Thread(target=self._process_audio, daemon=True).start()
 
-    def on_hotkey_release(self) -> None:
-        """Called when hotkey is released."""
-        if self.is_running and self.is_listening:
-            logger.info("Hotkey released, stopping capture")
-            self.recording_event.clear()
-            self.is_listening = False
-            # Process the audio in a background thread to avoid blocking hotkey handler
-            thread = threading.Thread(target=self._process_audio)
-            thread.daemon = True
-            thread.start()
+    def _on_island_click(self) -> None:
+        if self.is_listening:
+            self._stop_and_process("ISLAND")
+        else:
+            self._start_listening("ISLAND")
+
+    def _on_hotkey_press(self) -> None:
+        self._start_listening("HOTKEY")
+
+    def _on_hotkey_release(self) -> None:
+        self._stop_and_process("HOTKEY")
+
+    # ── Recording loop (background thread) ───────────────
 
     def _recording_loop(self) -> None:
-        """Background thread that handles audio recording."""
         while self.is_running:
-            # Wait until recording is requested
-            if self.recording_event.is_set():
+            if self._recording_event.is_set():
                 try:
-                    logger.debug("Recording thread: waiting for audio")
-                    audio_data = self.audio_capture.record()
-                    self.last_audio_data = audio_data
-                    self.audio_ready_event.set()
-                    logger.debug(f"Recording thread: got {len(audio_data)} samples")
+                    audio_data = self.audio.record()
+                    self._last_audio = audio_data
+                    self._audio_ready.set()
+                    self._recording_event.clear()
                 except Exception as e:
-                    logger.error(f"Recording thread error: {e}")
-                    self.indicator.set_state(IndicatorState.ERROR)
+                    logger.error(f"Recording error: {e}")
+                    self._recording_event.clear()
+                    self.island.set_state(IslandState.ERROR)
+            elif self.is_listening:
+                # While listening, update UI with current audio level
+                rms = self.audio.current_rms
+                # Map RMS to 5 EQ bar levels (0.0-1.0)
+                # Use exponential scaling for better visual response
+                level = min(1.0, rms * 50)  # Scale up RMS for visibility
+                levels = [level * (0.6 + 0.4 * (i % 2)) for i in range(5)]
+                self.island.set_audio_levels(levels)
+                time.sleep(0.05)  # Update UI ~20x per second
             else:
                 time.sleep(0.01)
 
+    # ── Processing pipeline ──────────────────────────────
+
     def _process_audio(self) -> None:
-        """Process recorded audio and inject text."""
+        if not self._process_lock.acquire(blocking=False):
+            logger.warning("Pipeline busy, skipping")
+            return
+
+        self._processing = True
+        t_start = time.perf_counter()
+
         try:
-            # Wait for audio to be ready (with timeout)
-            if not self.audio_ready_event.wait(timeout=10):
-                logger.warning("Audio recording timed out")
-                self.indicator.set_state(IndicatorState.IDLE)
+            if not self._audio_ready.wait(timeout=10):
+                logger.warning("Audio timeout")
+                self.island.set_state(IslandState.IDLE)
                 return
 
-            audio_data = self.last_audio_data
-
-            if audio_data is None or len(audio_data) == 0:
-                logger.warning("No audio recorded")
-                self.indicator.set_state(IndicatorState.IDLE)
+            audio = self._last_audio
+            if audio is None or len(audio) == 0:
+                self.island.set_state(IslandState.IDLE)
                 return
 
-            self.indicator.set_state(IndicatorState.TRANSCRIBING)
+            duration = len(audio) / self.config["audio"]["sample_rate"]
+            logger.info(f"[PIPE] Audio: {duration:.1f}s ({len(audio)} samples)")
 
             # Transcribe
+            t0 = time.perf_counter()
             raw_text = self.transcriber.transcribe(
-                audio_data,
-                sample_rate=self.config["audio"]["sample_rate"],
+                audio, sample_rate=self.config["audio"]["sample_rate"],
             )
+            logger.info(f"[PIPE] Transcribe: {time.perf_counter() - t0:.2f}s → \"{raw_text}\"")
 
             if not raw_text:
-                logger.warning("Transcription failed")
-                self.indicator.set_state(IndicatorState.IDLE)
+                self.island.set_state(IslandState.IDLE)
                 return
 
-            # Cleanup if enabled
+            # Optional LLM cleanup
             final_text = raw_text
             if self.config["ollama"]["enabled"]:
-                logger.info("Running LLM cleanup")
+                t0 = time.perf_counter()
                 final_text = self.cleanup.cleanup(raw_text)
+                logger.info(f"[PIPE] Cleanup: {time.perf_counter() - t0:.2f}s → \"{final_text}\"")
 
-            # Inject text
-            logger.info(f"Injecting text: {final_text}")
-            success = self.text_injector.inject(final_text)
+            # Inject
+            t0 = time.perf_counter()
+            ok = self.injector.inject(final_text)
+            logger.info(f"[PIPE] Inject: {time.perf_counter() - t0:.2f}s (ok={ok})")
 
-            if success:
-                logger.info("Text injected successfully")
-            else:
-                logger.error("Text injection failed")
-
-            self.indicator.set_state(IndicatorState.IDLE)
+            self.island.set_state(IslandState.IDLE)
+            self.island.set_audio_levels([0.0] * 5)  # Reset levels on idle
+            logger.info(f"[PIPE] Total: {time.perf_counter() - t_start:.2f}s")
 
         except Exception as e:
-            logger.error(f"Error processing audio: {e}")
-            self.indicator.set_state(IndicatorState.ERROR)
+            logger.error(f"Pipeline error: {e}")
+            self.island.set_state(IslandState.ERROR)
         finally:
-            self.audio_ready_event.clear()
+            self._audio_ready.clear()
+            self._processing = False
+            self._process_lock.release()
 
-    def pause(self) -> None:
-        """Pause the application."""
-        logger.info("Application paused")
-        self.is_running = False
-
-    def resume(self) -> None:
-        """Resume the application."""
-        logger.info("Application resumed")
-        self.is_running = True
+    # ── Lifecycle ─────────────────────────────────────────
 
     def start(self) -> None:
-        """Start the application."""
-        logger.info("Starting application")
+        logger.info("Starting Wisper")
         self.is_running = True
+        _hide_console()
 
-        try:
-            # Start background recording thread
-            recording_thread = threading.Thread(target=self._recording_loop)
-            recording_thread.daemon = True
-            recording_thread.start()
+        # Background recording thread
+        threading.Thread(target=self._recording_loop, daemon=True).start()
 
-            # Start hotkey listener
-            self.hotkey_listener.start()
-            self.tray_manager.start()
-            self.indicator.set_state(IndicatorState.IDLE)
+        # Hotkey listener
+        self.hotkey.start()
 
-            logger.info("Application ready, waiting for hotkey...")
-            logger.info(f"Press {self.config['hotkey']['key']} to start dictating")
+        # TTS listener
+        self.tts.start()
 
-            # Keep the application running
-            while self.is_running:
-                time.sleep(0.1)
+        # Floating island (Qt — must be on main thread)
+        self.island.start()
+        self.island.set_state(IslandState.IDLE)
 
-        except KeyboardInterrupt:
-            logger.info("Keyboard interrupt, shutting down")
-        except Exception as e:
-            logger.error(f"Error in main loop: {e}")
-        finally:
-            self.stop()
+        hotkey_str = self.config["hotkey"]["key"]
+        logger.info(f"Ready — press {hotkey_str} or click the island")
 
-    def stop(self) -> None:
-        """Stop the application."""
-        logger.info("Stopping application")
+        # Qt event loop (blocks main thread)
+        self.island.run_event_loop()
+
+    def _pause(self) -> None:
+        logger.info("Paused")
         self.is_running = False
 
-        self.hotkey_listener.stop()
-        self.tray_manager.stop()
-
-        logger.info("Application stopped")
+    def _stop(self) -> None:
+        logger.info("Stopping")
+        self.is_running = False
+        self.tts.stop()
+        self.hotkey.stop()
+        self.island.stop()
         sys.exit(0)
 
 
 def main() -> None:
-    """Main entry point."""
-    # Get config path from command line or use default
-    config_path = "config.yaml"
-    if len(sys.argv) > 1:
-        config_path = sys.argv[1]
+    default_cfg = str(_app_dir() / "config.yaml")
+    config_path = sys.argv[1] if len(sys.argv) > 1 else default_cfg
 
-    app = SpeechToTextApp(config_path)
+    # First-run setup wizard (GUI — no terminal needed)
+    from src.first_run import needs_setup, run_setup_wizard
+    if needs_setup():
+        from PyQt5.QtWidgets import QApplication
+        qt_app = QApplication.instance() or QApplication(sys.argv)
+        if not run_setup_wizard(qt_app):
+            logger.error("Setup not completed")
+            sys.exit(1)
+
+    app = WisperApp(config_path)
     app.start()
 
 
