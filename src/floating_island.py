@@ -430,3 +430,8 @@ class FloatingIsland:
             self._signal.changed.emit(state.value)
         except Exception:
             pass
+
+    def set_audio_levels(self, levels: list) -> None:
+        """Update audio levels on the widget."""
+        if self._widget:
+            self._widget.set_audio_levels(levels)
