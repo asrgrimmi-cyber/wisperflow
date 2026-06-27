@@ -10,8 +10,8 @@ whisper:
   model_name: tiny
   language: en
   device: cpu
-  remote_url: http://192.168.0.5:8765
-  remote_timeout: 30
+  # For GPU: device: cuda (requires torch + CUDA)
+  # Available models: tiny, base, small, medium, large
 ollama:
   enabled: true
   base_url: http://localhost:11434

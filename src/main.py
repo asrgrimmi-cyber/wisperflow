@@ -82,14 +82,12 @@ class WisperApp:
             silence_duration=audio_cfg["silence_duration"],
         )
 
-        # Transcription
+        # Transcription (local only)
         whisper_cfg = self.config["whisper"]
         self.transcriber = WhisperTranscriber(
             model_name=whisper_cfg["model_name"],
             language=whisper_cfg["language"],
             device=whisper_cfg["device"],
-            remote_url=whisper_cfg.get("remote_url") or None,
-            remote_timeout=whisper_cfg.get("remote_timeout", 30),
         )
 
         # LLM cleanup (optional)
