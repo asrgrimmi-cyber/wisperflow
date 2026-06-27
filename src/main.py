@@ -26,6 +26,12 @@ def _app_dir() -> Path:
 
 sys.path.insert(0, str(_app_dir()))
 
+# Import torch BEFORE PyQt5 to avoid DLL conflict on Windows
+try:
+    import torch  # noqa: F401
+except ImportError:
+    pass
+
 from src.audio import AudioCapture
 from src.cleanup import OllamaCleanup
 from src.floating_island import FloatingIsland, IslandState

@@ -55,7 +55,14 @@
       "Bash(winget install:*)",
       "Bash(ollama:*)",
       "Bash(/c/Users/Aakashsingh/AppData/Local/Programs/Ollama/ollama.exe pull:*)",
-      "Bash(/c/Users/Aakashsingh/AppData/Local/Programs/Ollama/ollama.exe list:*)"
+      "Bash(/c/Users/Aakashsingh/AppData/Local/Programs/Ollama/ollama.exe list:*)",
+      "Bash(pip uninstall:*)",
+      "Bash(rm -rf venv)",
+      "Bash(./venv/Scripts/activate)",
+      "Bash(powershell.exe -Command \"Remove-Item -Recurse -Force venv -ErrorAction SilentlyContinue; python -m venv venv\")",
+      "Bash(venv/Scripts/pip.exe install:*)",
+      "Bash(venv/Scripts/python.exe -m pip install --upgrade pip)",
+      "Bash(venv/Scripts/python.exe -c \"import torch; print\\(f''PyTorch: {torch.__version__}''\\); import whisper; print\\(''Whisper: OK''\\)\")"
     ]
   }
 }
