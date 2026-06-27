@@ -13,7 +13,7 @@ whisper:
   # To use GPU: 1) Install CUDA-enabled PyTorch 2) Change device to: cuda
   # Available models: tiny, base, small, medium, large
 ollama:
-  enabled: true
+  enabled: false
   base_url: http://localhost:11434
   model: orca-mini
   timeout: 10
