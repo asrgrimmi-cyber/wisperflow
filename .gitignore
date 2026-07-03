@@ -33,8 +33,7 @@ env/
 .DS_Store
 
 # Project-specific
-models/*.bin
-models/*.gguf
+models/
 *.log
 .env
 *.wav

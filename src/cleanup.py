@@ -31,7 +31,7 @@ class OllamaCleanup:
         self.timeout = timeout
         self.prompt_template = (
             prompt_template
-            or """Fix grammar and punctuation only. Keep all content. Output fixed text:
+            or """Rules: Output ONLY the corrected text. No quotes, no explanations, no preamble. Fix grammar and punctuation only. Keep all original meaning.
 
 {text}"""
         )
@@ -66,25 +66,32 @@ class OllamaCleanup:
             return text
 
         try:
-            prompt = self.prompt_template.format(text=text)
-
             logger.debug(f"Sending cleanup request to Ollama ({self.model})")
 
             response = requests.post(
-                f"{self.base_url}/api/generate",
+                f"{self.base_url}/api/chat",
                 json={
                     "model": self.model,
-                    "prompt": prompt,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "You are a text corrector. You receive speech-to-text output. Fix grammar and punctuation. Output ONLY the corrected sentence. Never add explanations, quotes, or commentary.",
+                        },
+                        {"role": "user", "content": text},
+                    ],
                     "stream": False,
+                    "options": {"num_predict": 100},
                 },
                 timeout=self.timeout,
             )
 
             if response.status_code == 200:
                 result = response.json()
-                cleaned_text = result.get("response", "").strip()
+                cleaned_text = result.get("message", {}).get("content", "").strip()
+                # Strip quotes the LLM might wrap around the text
+                cleaned_text = cleaned_text.strip('"\'')
                 logger.debug(f"Cleaned text: {cleaned_text}")
-                return cleaned_text
+                return cleaned_text if cleaned_text else text
             else:
                 logger.error(f"Ollama error: {response.status_code}")
                 return text
